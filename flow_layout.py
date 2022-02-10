@@ -262,19 +262,17 @@ def get_network_layout(loader, idx):
     cache_file = os.path.join(cache_dir, f'{idx}.json')
     cache_data = open(cache_file, 'r').read()
     cache_data = json.loads(cache_data)
-    contri = np.array(loader.contri[idx])[:loader.n_layer, :-1]
+    contri = np.array(loader.delta_s_value[idx])[:loader.n_layer, :-1]
     contri = aggregate(contri, idxs)
-    delta_s = np.array(loader.all_delta_s[idx])
-    delta_s = aggregate(delta_s, idxs)
-    for i in range(delta_s.shape[0]):
-        for j in range(delta_s.shape[1]):
-            if delta_s[i, j] < -loader.threshold_xi:
-                delta_s[i, j] = -1
-            elif delta_s[i, j] > +loader.threshold_xi:
-                delta_s[i, j] = 1
+    polarity = aggregate(np.array(loader.polarity_mat[idx]), idxs)
+    for i in range(polarity.shape[0]):
+        for j in range(polarity.shape[1]):
+            if polarity[i, j] < 0:
+                polarity[i, j] = -1
+            elif polarity[i, j] > 0:
+                polarity[i, j] = 1
             else:
-                delta_s[i, j] = 0
-    polarity = delta_s
+                polarity[i, j] = 0
     
     m = contri.shape[0]
     max_pos = contri[:, 0].argmax()

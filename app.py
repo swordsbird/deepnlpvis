@@ -7,7 +7,7 @@ from flask_cors import CORS
 from flask_compress import Compress
 from pytorch_pretrained_bert import BertTokenizer
 from utils import entropy_to_contribution, word_ordering, stem
-from loader import init_loader
+from loader import init_loader, update_select_index
 from flow_layout import get_network_layout
 from keyword_extractor import get_sentences_keywords
 from context_layout import get_wordcontext_layout
@@ -16,6 +16,7 @@ from config import n_percentile, n_percentile_words, word_contribution_max_layer
 tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
 get_grids_ret = None
 loader = init_loader()
+update_select_index(loader, [1, 0])
 
 sentence_network_cache = {}
 word_network_cache = {}
@@ -43,7 +44,7 @@ def get_linechart_info(loader, idxs, attrs={}):
 
     polarity_by_layer = []
     for layer in range(loader.n_layer):
-        polarity = loader.get_word_polarity_by_layer(idxs, layer)
+        polarity = loader.get_word_delta_s_by_layer(idxs, layer)
         polarity_by_layer.append(polarity)
 
     for i in idxs:
@@ -115,7 +116,7 @@ def get_linechart_info(loader, idxs, attrs={}):
                 contri[key] = contri.get(key, 0) + contri0 * instance_weight
                 if word not in loader.stop_words:
                     all_entropy.append(contri0)
-                    all_contri.append(abs(loader.contri[i][layer, index]))
+                    all_contri.append(loader.delta_s_value[i][layer, index])
                     v_distribution.append(contri0)
                     if contri0 > loader.threshold_gamma:
                         curr_words += 1

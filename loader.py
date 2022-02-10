@@ -97,21 +97,23 @@ def weight_preprocess(loader):
     for layer in range(loader.n_layer):
         layer_weight_preprocess(loader, range(loader.size), layer)
 
+def update_select_index(loader, indexes):
+    [main_index, second_index] = indexes
+    loader.set_main_index(main_index)
+    loader.set_second_index(second_index)
+    loader.calc_polarity()
+    loader.calc_all_layer_delta_s()
 
 def init_loader():
     loader = DataLoader(home_path, dataset_name, n_samples)
     set_instance_coordinates(loader)
     set_word_coordinates(loader)
-    loader.set_main_index(1)
-    loader.set_second_index(0)
     loader.threshold_xi = threshold_xi
     loader.threshold_gamma = threshold_gamma
-    set_prediction(loader)
-    weight_preprocess(loader)
-    #stop_words = stopwords.words('english')
     stop_words = []
+    #stop_words = stopwords.words('english')
     stop_words = set(stop_words + custom_stop_words)
     loader.stop_words = stop_words
-    loader.calc_polarity()
-    loader.calc_all_layer_polarity()
+    set_prediction(loader)
+    weight_preprocess(loader)
     return loader

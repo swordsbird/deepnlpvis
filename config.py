@@ -1,21 +1,22 @@
 home_path = '/home/lizhen/data/'
-#threshold_xi = 5e-6
-#threshold_gamma = 0.6
-threshold_xi = 10e-6
-threshold_gamma = 0.4
+threshold_xi = 1e-5
+threshold_gamma = 0.6
+#threshold_xi = 10e-6
+#threshold_gamma = 0.4
 information_flow_alpha = 0.4
 information_flow_beta = 5
 n_percentile = 10
 n_percentile_words = 20
 word_context_max_layers = 4
 word_contribution_max_layers = 6
-stop_words = ['ziff', 'woe', 'lt', 'gt', 'quot', 'rsquo', 'quickinfo', 'quote', 'arial', 'com', 'href', 'aspx', 'helvetica', 'serif', 'www', 'fullquote', 'ap', 'afp', 'sans', 'font']# 'alligators', 'crocodilians', 'photoshop', 'llinas', 'brockton', 'puncha', 'manhood']
+stop_words = ['ziff', 'woe', 'lt', 'gt', 'quot', 'rsquo', 'quickinfo', 'quote', 'arial', 'com', 'href', 'aspx', 'helvetica', 'serif', 'www', 'fullquote', 'ap', 'afp', 'sans', 'font', 'verdana']# 'alligators', 'crocodilians', 'photoshop', 'llinas', 'brockton', 'puncha', 'manhood']
 
 project_name = 'DeepNLPVis'
 
-dataset_name = 'sst2_lstm'
-model_name = 'lstm'
+dataset_name = 'sst2_10k'
+model_name = 'bert'
 n_samples = 4000
+
 '''
 dataset_name = 'sst2_10k'
 model_name = 'bert'

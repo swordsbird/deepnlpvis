@@ -3,7 +3,7 @@ import numpy as np
 import os
 import nltk.stem
 import pandas as pd
-from utils import clear_cache, entropy_to_contribution
+from utils import clear_mat, entropy_to_contribution
 from pytorch_pretrained_bert import BertTokenizer
 tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
 
@@ -73,8 +73,8 @@ class DataLoader:
             data = [x for x in data if len(x) == 2]
             self.all_data_text = [x[0] for x in data]
             self.all_data_label = [x[1] for x in data]
-            self.all_data_text = self.all_data_text[:20000]
-            self.all_data_label = self.all_data_label[:20000]
+            self.all_data_text = self.all_data_text
+            self.all_data_label = self.all_data_label
             self.data_labels = ['0', '1']
             self.data_label_name = ['Negative', 'Positive']
             self.label_index = {}
@@ -112,7 +112,7 @@ class DataLoader:
         print('loading entropy for each layer')
         self.layer_entropy = []
         self.word_entropy = []
-        self.contri = []
+        self.delta_s_value = []
         self.contri_value = []
         self.contri_direction = []
         self.logits = []
@@ -175,7 +175,7 @@ class DataLoader:
 
             entropy = np.load(file_path_4)
             self.contri_value.append(entropy)
-            self.contri.append(entropy_to_contribution(entropy.copy()))
+            self.delta_s_value.append(entropy_to_contribution(entropy.copy()))
 
             entropy = np.load(file_path_5)
             self.contri_direction.append(entropy)
@@ -356,80 +356,54 @@ class DataLoader:
         self.model_name = v
 
     def calc_polarity(self):
-        self.all_delta_s = []
+        self.polarity_mat = []
         for idx in range(self.size):
             old_s = self.all_old_s[idx]
             delta_mat = []
             for layer in range(self.n_layer):
                 s = old_s[self.main_index] / (old_s[self.main_index] + old_s[self.second_index])
                 delta_row = []
-                for j, new_s in enumerate(self.all_new_s[idx][layer]):
+                for _, new_s in enumerate(self.all_new_s[idx][layer]):
                     ns = new_s[self.main_index] / (new_s[self.main_index] + new_s[self.second_index])
                     ds = ns - s
                     delta_row.append(ds)
                 delta_mat.append(delta_row)
-            self.all_delta_s.append(np.array(delta_mat))
+            self.polarity_mat.append(np.array(delta_mat))
 
 
-    def calc_all_layer_polarity(self):
-        dicts = [self.get_word_polarity_by_layer(
+    def calc_all_layer_delta_s(self):
+        dicts = [self.get_word_delta_s_by_layer(
             range(self.size), layer) for layer in range(self.n_layer)]
         self.layer_contri = dicts
 
-    def get_stemed_word_polarity(self, idxs, layer = -1):
-        polarity = {}
+    def get_word_delta_s_by_layer(self, idxs, layer = -1, stem = False):
+        delta_s = {}
         for i in idxs:
             for t in self.data_token[i]:
-                w = stemmer.stem(t[0])
-                if w not in polarity:
-                    polarity[w] = []
+                w = stemmer.stem(t[0]) if stem else t[0]
+                if w not in delta_s:
+                    delta_s[w] = []
                 if len(t[1]) == 1:
-                    e = self.all_delta_s[i][layer,t[1][0]]
+                    ds = self.polarity_mat[i][layer,t[1][0]]
                 else:
-                    e = self.all_delta_s[i][layer,t[1]].sum()
-                polarity[w].append(e)
-        for t in polarity:
-            tot = len(polarity[t])
-            neg = len([x for x in polarity[t] if x > self.threshold_xi])
-            pos = len([x for x in polarity[t] if x < -self.threshold_xi])
-            polarity[t] = {
-                'avg': float(np.mean(polarity[t])),
+                    ds = self.polarity_mat[i][layer,t[1]].sum()
+                delta_s[w].append(ds)
+        for t in delta_s:
+            tot = len(delta_s[t])
+            neg = len([x for x in delta_s[t] if x > self.threshold_xi])
+            pos = len([x for x in delta_s[t] if x < -self.threshold_xi])
+            delta_s[t] = {
+                'avg': float(np.mean(delta_s[t])),
                 'neg': neg,
                 'pos': pos,
                 'neu': tot - neg - pos,
             }
 
-        return polarity
-
-    def get_word_polarity_by_layer(self, idxs, layer = -1):
-        polarity = {}
-        for i in idxs:
-            for t in self.data_token[i]:
-                if t[0] not in polarity:
-                    polarity[t[0]] = []
-                if len(t[1]) == 1:
-                    e = self.all_delta_s[i][layer,t[1][0]]
-                else:
-                    e = self.all_delta_s[i][layer,t[1]].sum()
-                polarity[t[0]].append(e)
-        for t in polarity:
-            tot = len(polarity[t])
-            neg = len([x for x in polarity[t] if x > self.threshold_xi])
-            pos = len([x for x in polarity[t] if x < -self.threshold_xi])
-            polarity[t] = {
-                'avg': float(np.mean(polarity[t])),
-                'neg': neg,
-                'pos': pos,
-                'neu': tot - neg - pos,
-            }
-
-        return polarity
+        return delta_s
 
     def get_word_layer_entropy(self, idxs, layer=-1):
         entropy = {}
         for i in idxs:
-            print(i, self.data_token[i])
-            print(self.layer_entropy[i].shape)
             for t in self.data_token[i]:
                 if t[0] not in entropy:
                     entropy[t[0]] = []

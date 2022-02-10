@@ -11,6 +11,8 @@ __pycache__/
 build/
 cache/
 cache/*
+nlpvis/node_modules/
+nlpvis/node_modules/*
 develop-eggs/
 dist/
 downloads/

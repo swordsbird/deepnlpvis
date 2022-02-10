@@ -221,7 +221,7 @@ def get_wordcontext_layout(loader, layers, word):
             if len(idxs) == 0:
                 continue
             if layer > 0:
-                contris = loader.get_stemed_word_polarity(idxs, layer)
+                contris = loader.get_word_delta_s_by_layer(idxs, layer, stem = True)
             scores = []
             for i in idxs:
                 s1 = loader.data_prediction_score[i][loader.main_index]

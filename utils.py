@@ -5,7 +5,7 @@ import random
 from scipy.spatial import Delaunay
 from scipy.spatial.distance import pdist
 
-epsilon = 1e-4
+epsilon = 3e-6
 
 
 def entropy_to_contribution(e):
