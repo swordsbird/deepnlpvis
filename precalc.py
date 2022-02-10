@@ -3,19 +3,14 @@ import numpy as np
 import math
 import json
 from sklearn.metrics.pairwise import euclidean_distances
-import sys
-from sklearn.cluster import AgglomerativeClustering
-sys.path.append('lib')
-from data_loader_old import DataLoader
 from pytorch_pretrained_bert import BertModel, BertTokenizer, BertForSequenceClassification
 import nltk.stem
 stemmer = nltk.stem.SnowballStemmer('english')
 import torch
-import random
 import yaml
 from sklearn.manifold import TSNE
 from model.model_elmo import elmo_RNNClassifier
-from model.basic_model_helper import preprocess_sentence_batch, set_device
+from model.basic_model_helper import preprocess_sentence_batch
 
 is_sst2_dataset = True
 is_lstm = True

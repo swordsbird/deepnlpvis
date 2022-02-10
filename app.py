@@ -30,7 +30,7 @@ def get_word_info(loader, word):
     return info
 
 
-def get_linechart_info(loader, idxs, attrs={}):
+def get_word_contribution(loader, idxs, attrs={}):
     selected_labels = loader.selected_labels()
     idxs = [i for i in idxs if loader.data_label[i] in selected_labels and loader.pred_label[i] in selected_labels]
     loader.cache['linechart_idxes'] = idxs
@@ -235,7 +235,7 @@ def get_linechart_info(loader, idxs, attrs={}):
     return layers
 
 
-layer_info = get_linechart_info(loader, range(loader.size))
+layer_info = get_word_contribution(loader, range(loader.size))
 
 app = Flask(__name__, template_folder='static',
             static_folder='static', static_url_path='/static')
@@ -269,7 +269,7 @@ def get_network():
         if idx not in sentence_network_cache:
             layout = get_network_layout(loader, idx)
             loader.cache['linechart_attrs']['highlight'] = loader.data_word[idx]
-            linechart = get_linechart_info(
+            linechart = get_word_contribution(
                 loader,
                 loader.cache['linechart_idxes'],
                 loader.cache['linechart_attrs']
@@ -341,9 +341,9 @@ def get_layers():
     idxs = data.get('idxs', None)
     attrs = data.get('attrs', {})
     if idxs == None or len(idxs) == 0:
-        ret = get_linechart_info(loader, range(loader.size), attrs)
+        ret = get_word_contribution(loader, range(loader.size), attrs)
     else:
-        ret = get_linechart_info(loader, idxs, attrs)
+        ret = get_word_contribution(loader, idxs, attrs)
     return jsonify(ret)
 
 
