@@ -1,6 +1,6 @@
-from model_elmo import elmo_RNNClassifier, basic_CNNClassifier, global_tokenizer
+from .model_elmo import elmo_RNNClassifier, basic_CNNClassifier, global_tokenizer
 from pytorch_pretrained_bert import BertTokenizer
-from dataset import InputExample, dataset
+from .dataset import InputExample, dataset
 import torch
 import yaml
 import os

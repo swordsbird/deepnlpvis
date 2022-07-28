@@ -1,6 +1,7 @@
 import numpy as np
 import nltk.stem
 import math
+import config
 import random
 from scipy.spatial import Delaunay
 from scipy.spatial.distance import pdist
@@ -281,3 +282,63 @@ class ForceDirectedModel():
         centered_positions[:, :, 1] = all_pos[:, :, 1] - com_y
 
         return centered_positions
+
+def clear_mat(loader):
+    mat = loader.polarity_mat
+    if loader.model_name == 'lstm':
+        gth = 0.45
+    elif loader.dataset_name == 'agnews':
+        gth = 0.420
+    else:
+        gth = 0.5
+    for idx in range(loader.size):
+        for j in range(mat[idx].shape[1]):
+            delta_s = mat[idx][:, j]
+            abs_delta_s = np.abs(delta_s)
+            summit = abs_delta_s.argmax()
+            last_contri = entropy_to_contribution(loader.layer_entropy[idx][-1, j])
+            #if loader.data_word[idx][j] == 'google':
+            #    avg_s.append(last_contri)
+            if abs_delta_s[summit] < loader.threshold_xi:
+                if last_contri < gth:
+                    mat[idx][i:, j] = 0
+                    continue
+                abs_delta_s[summit] = loader.threshold_xi * 2
+                delta_s[summit] = abs_delta_s[summit] if delta_s[summit] > 0 else -abs_delta_s[summit]
+            polarity = loader.pred_label[idx] == loader.data_labels[loader.main_index]
+            flag = False
+            for i in range(summit - 1, -1, -1):
+                sgn = -1 if delta_s[summit] < 0 else 1
+                if flag or (delta_s[i] < 0) == (delta_s[summit] < 0):
+                    mat[idx][i, j] = sgn * min(abs_delta_s[i], abs_delta_s[i + 1])
+                else:
+                    summit = i
+                    flag = True
+            for i in range(summit + 1, loader.n_layer):
+                contri = entropy_to_contribution(loader.layer_entropy[idx][i, j])
+                if contri < gth:
+                    mat[idx][i:, j] = 0
+                    break
+                elif (delta_s[i] < 0) == (delta_s[summit] < 0) or i + 1 < loader.n_layer and (delta_s[i + 1] < 0) == (delta_s[summit] < 0):
+                    mat[idx][i, j] = delta_s[summit]
+                elif (delta_s[summit] < 0) == polarity:
+                    mat[idx][i, j] = delta_s[summit]
+                else:#(delta_s[i] < 0) != polarity:
+                    value = abs_delta_s[summit]
+                    mat[idx][i:, j] = -value if polarity else value
+                    break
+            mid = loader.n_layer // 2
+            if np.abs(mat[idx][mid:, j]).mean() < loader.threshold_xi * 0.5:
+                mat[idx][:, j] = 0
+            elif abs_delta_s[-2:].mean() > loader.threshold_xi:
+                if loader.dataset_name == 'agnews':
+                    mat[idx][mid:, j] = np.where(mat[idx][mid:, j] > 0, 1, -1) * (loader.threshold_xi * 10)
+                else:
+                    mat[idx][mid:, j] = np.where(mat[idx][mid:, j] == 0, 0, 1) * np.where(mat[idx][mid:, j] > 0, 1, -1) * (loader.threshold_xi * 10)
+    if config.polarity != 'delta_s':
+        for idx in range(loader.size):
+            for j in range(mat[idx].shape[1]):
+                last_contri = entropy_to_contribution(loader.layer_entropy[idx][-1, j])
+                if last_contri < gth:
+                    mat[idx][0, j] = 0
+    loader.polarity_mat = mat

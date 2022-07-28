@@ -3,6 +3,8 @@ import numpy as np
 import os
 import nltk.stem
 import pandas as pd
+import random
+import config
 from utils import clear_mat, entropy_to_contribution
 from pytorch_pretrained_bert import BertTokenizer
 tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
@@ -12,11 +14,13 @@ project_name = 'DeepNLPVis'
 
 
 class DataLoader:
-    def __init__(self, home_path, dataset_name, size=-1, load_activation=True, datatype='train'):
+    def __init__(self, home_path, dataset_name, model_name, size=-1, load_activation=True, datatype='train'):
         self.home_path = home_path
         self.dataset_name = dataset_name
         self.project_name = project_name
-
+        self.model_name = model_name
+        self.color_scheme = None
+        self.xi_values = None
         self.dataset_path = os.path.join(
             self.home_path, self.project_name, 'dataset')
 
@@ -84,7 +88,8 @@ class DataLoader:
             table = pd.read_csv(self.data_path, sep='\t')
             title = [x for x in table['Title']]
             description = [x for x in table['Description']]
-            text = [title[i] + description[i] for i in range(table.shape[0])]
+            #text = [title[i] + ' ' + description[i] for i in range(table.shape[0])]
+            text = [title[i] + (' ' if len(tokenizer.tokenize(title[i] + ' ' + description[i])) == len(tokenizer.tokenize(title[i] + description[i])) else '') + description[i] for i in range(table.shape[0])]
             labels = [str(x) for x in table['Class Index']]
             if self.size == -1:
                 self.size = len(text)
@@ -97,7 +102,7 @@ class DataLoader:
             table = pd.read_csv(self.all_data_path, sep='\t')
             title = [x for x in table['Title']]
             description = [x for x in table['Description']]
-            text = [title[i] + description[i] for i in range(table.shape[0])]
+            text = [title[i] + ' ' + description[i] for i in range(table.shape[0])]
             labels = [x for x in table['Class Index']]
             self.all_data_text = text
             self.all_data_label = labels
@@ -111,10 +116,10 @@ class DataLoader:
         self.n_classes = len(self.data_labels)
         print('loading entropy for each layer')
         self.layer_entropy = []
+        self.layer_contri = []
         self.word_entropy = []
-        self.delta_s_value = []
         self.contri_value = []
-        self.contri_direction = []
+        self.sigma = []
         self.logits = []
         self.layer_weight = []
         self.word_context = []
@@ -133,8 +138,6 @@ class DataLoader:
                 self.layer_activation_path, f'{i}logits.npy')
             file_path_4 = os.path.join(
                 self.contri_path, f'{i}.npy')
-            file_path_5 = os.path.join(
-                self.direction_path, f'{i}.npy')
             file_path_6 = os.path.join(
                 self.layer_weight_path, f'{i}.npy')
             file_path_7 = os.path.join(self.layer_activation_path, f'{i}.npy')
@@ -143,7 +146,7 @@ class DataLoader:
             file_path_9 = os.path.join(
                 self.layer_activation_path, f'{i}emb.npy')
             file_paths = [file_path_1, file_path_2, file_path_3,
-                          file_path_4, file_path_5, file_path_6, file_path_7]
+                          file_path_4, file_path_6, file_path_7]
 
             flag = False
             for file_path in file_paths:
@@ -166,19 +169,19 @@ class DataLoader:
             entropy = entropy.reshape(
                 (n_layer, entropy.shape[-1], entropy.shape[-1]))
             self.word_entropy.append(entropy)
-            self.layer_entropy[-1] = np.concatenate(
-                (self.layer_entropy[-1], entropy[-1, :1]), axis=0
-            )
-
+            
+            if self.model_name == 'bert':
+                self.layer_entropy[-1] = np.concatenate(
+                    (self.layer_entropy[-1], entropy[-1, :1]), axis=0
+                )
+            self.layer_contri.append(entropy_to_contribution(self.layer_entropy[-1]))
+            
             entropy = np.load(file_path_3)
             self.logits.append(entropy)
 
             entropy = np.load(file_path_4)
-            self.contri_value.append(entropy)
-            self.delta_s_value.append(entropy_to_contribution(entropy.copy()))
-
-            entropy = np.load(file_path_5)
-            self.contri_direction.append(entropy)
+            self.sigma.append(entropy)
+            self.contri_value.append(entropy_to_contribution(entropy.copy()))
 
             entropy = np.load(file_path_6, allow_pickle=True)
             n_layer = entropy.shape[0] // entropy.shape[1]
@@ -206,6 +209,7 @@ class DataLoader:
         self.data_word = []
         self.data_word_lens = []
         self.inverted_list = {}
+        self.original_inverted_list = {}
         print('tokenize all sentences')
         max_len = 0
         for i in tqdm(range(self.size)):
@@ -242,13 +246,18 @@ class DataLoader:
                     continue
                 if k not in self.inverted_list:
                     self.inverted_list[k] = []
+                if w not in self.original_inverted_list:
+                    self.original_inverted_list[w] = []
                 self.inverted_list[k].append((i, j))
+                self.original_inverted_list[w].append((i, j))
             self.data_token.append(tokens)
             self.data_word.append(words)
             self.data_word_lens.append(lens)
+        print('average length', np.mean([len(x) for x in self.data_text]))
 
         self.all_inverted_list = {}
         self.all_word_labels = {}
+        self.all_data_word = []
         for i in tqdm(range(len(self.all_data_text))):
             tokens = []
             tokens_ = ["[CLS]"] + \
@@ -279,12 +288,13 @@ class DataLoader:
             for j, w in enumerate(words):
                 if w == '' or j == 0 or j == len(tokens_) - 1:
                     continue
-                k = stemmer.stem(w)
+                k = w
                 if k not in self.all_inverted_list:
                     self.all_inverted_list[k] = []
                     self.all_word_labels[k] = []
                 self.all_inverted_list[k].append((i, j))
                 self.all_word_labels[k].append(self.all_data_label[i])
+            self.all_data_word.append(words)
 
         self.word_frequency = self.get_word_frequency(range(self.size))
         self.all_layer_entropy = [self.get_word_layer_entropy(
@@ -349,9 +359,6 @@ class DataLoader:
     def set_threshold_xi(self, v):
         self.threshold_xi = v
 
-    def set_threshold_gamma(self, v):
-        self.threshold_gamma = v
-
     def set_model_name(self, v):
         self.model_name = v
 
@@ -360,27 +367,43 @@ class DataLoader:
         for idx in range(self.size):
             old_s = self.all_old_s[idx]
             delta_mat = []
+            agg_ns = []
+            for layer in range(self.n_layer):
+                for _, new_s in enumerate(self.all_new_s[idx][layer]):
+                    ns = new_s[self.main_index] / (new_s[self.main_index] + new_s[self.second_index])
+                    agg_ns.append(ns)
+            std_ns = np.std(agg_ns)
             for layer in range(self.n_layer):
                 s = old_s[self.main_index] / (old_s[self.main_index] + old_s[self.second_index])
                 delta_row = []
                 for _, new_s in enumerate(self.all_new_s[idx][layer]):
                     ns = new_s[self.main_index] / (new_s[self.main_index] + new_s[self.second_index])
                     ds = ns - s
-                    delta_row.append(ds)
+                    delta_row.append(ds / std_ns)
                 delta_mat.append(delta_row)
             self.polarity_mat.append(np.array(delta_mat))
 
+    def calc_distribution(self):
+        if self.xi_values != None:
+            return
+        xi_values = []
+        for i in range(len(self.polarity_mat)):
+            shape = self.polarity_mat[i].shape
+            xi_values = xi_values + self.polarity_mat[i].reshape((shape[0] * shape[1])).tolist()
+        xi_values = random.sample(xi_values, config.n_distribution_sample)
+        self.xi_values = [float(x) for x in xi_values]
 
     def calc_all_layer_delta_s(self):
+        clear_mat(self)
         dicts = [self.get_word_delta_s_by_layer(
             range(self.size), layer) for layer in range(self.n_layer)]
-        self.layer_contri = dicts
+        self.layer_word_contri = dicts
 
-    def get_word_delta_s_by_layer(self, idxs, layer = -1, stem = False):
+    def get_word_delta_s_by_layer(self, idxs, layer = -1, is_stem = False):
         delta_s = {}
         for i in idxs:
             for t in self.data_token[i]:
-                w = stemmer.stem(t[0]) if stem else t[0]
+                w = stemmer.stem(t[0]) if is_stem else t[0]
                 if w not in delta_s:
                     delta_s[w] = []
                 if len(t[1]) == 1:

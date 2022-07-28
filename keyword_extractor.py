@@ -1,5 +1,6 @@
 from utils import word_ordering
 from config import max_keyword_num
+import math
 
 
 def get_sentences_keywords(loader, idxs, layer):
@@ -43,13 +44,22 @@ def get_sentences_keywords(loader, idxs, layer):
     ret = []
     for x in words[:max_keyword_num]:
         word, importance, tf, contri, _ = x
-        ret.append({
-            'word': word,
-            'value': round(importance, 4),
-            'frequency': round(tf, 4),
-            'entropy': round(contri, 4),
-            'contri': loader.layer_contri[-1][word],
-            'score': loader.word_prediction_score[word],
-            'embedding': loader.word_embedding[word],
-        })
+        if word in loader.word_prediction_score:
+            ret.append({
+                'word': word,
+                'value': round(importance, 4),
+                'frequency': round(tf, 4),
+                'entropy': round(contri, 4),
+                'contri': loader.layer_word_contri[-1][word],
+                'score': loader.word_prediction_score[word],
+                'embedding': loader.word_embedding[word],
+            })
+    
+    if layer == loader.n_layer - 1:
+        words = sorted(ret, key = lambda x: -math.log(x['frequency'] + 1) * x['entropy'])
+        for i in range(len(words)):
+            c = words[i]['contri']
+            if words[i]['word'] == 'deceptively':
+                print('#', i, words[i]['word'], words[i]['entropy'], words[i]['frequency'])
+                print(c['neu'], 'neutrals, ', c['pos'], 'positives, ', c['neg'], 'negatives. ')
     return ret

@@ -6,15 +6,14 @@ from sklearn.cluster import AgglomerativeClustering
 from keyword_extractor import get_sentences_keywords
 
 
-def clustering_for_word(loader, word):
+def clustering_for_word(loader, word, inverted_list):
     distance_step = 1.1
     labels = []
-    word = stem(word)
     thres = config.context_distance_threshold
 
     word_index = {}
     word_curr_index = 0
-    for p in loader.inverted_list[word]:
+    for p in inverted_list:
         for q in loader.data_token[p[0]]:
             w = stem(q[0])
             if w not in word_index:
@@ -23,18 +22,21 @@ def clustering_for_word(loader, word):
     print('total words on', word, word_curr_index)
     min_clusters = config.context_min_n_clusters + 1
     max_clusters = config.context_max_n_clusters
-    deep_layer = loader.n_layer - 3
+    deep_layer = min(loader.n_layer - 2, loader.n_layer * 3 // 4)
 
     for layer in range(loader.n_layer):
         x = []
+        tot = 0
         if layer < deep_layer:
-            for p in loader.inverted_list[word]:
+            for p in inverted_list:
                 x.append(np.concatenate((loader.word_context[p[0]][layer, p[1]], np.array(
-                    (0.0 * loader.data_prediction_score[p[0]][0], 0.02 * loader.data_embedding[p[0]])))))
+                    (0.0 * loader.data_prediction_score[p[0]][loader.main_index], 0.02 * loader.data_embedding[p[0]])))))
         else:
-            for p in loader.inverted_list[word]:
+            for p in inverted_list:
                 x.append(np.concatenate((loader.word_context[p[0]][layer, p[1]], np.array(
-                    (0.1 * loader.data_prediction_score[p[0]][0], 0.02 * loader.data_embedding[p[0]])))))
+                    (0.1 * loader.data_prediction_score[p[0]][loader.main_index], 0.02 * loader.data_embedding[p[0]])))))
+                tot += loader.data_prediction_score[p[0]][loader.main_index]
+        tot /= len(inverted_list)
         n_clusters = max_clusters + 1
         if layer == deep_layer:
             min_clusters -= 1
@@ -50,7 +52,15 @@ def clustering_for_word(loader, word):
                 distance_threshold=thres, n_clusters=None, linkage="ward").fit(x)
             n_clusters = clustering.labels_.max() + 1
             loop += 1
+        if layer == loader.n_layer - 1 and n_clusters > min_clusters + 1:
+            if tot < 0.15 or tot > 0.85:
+                clustering = AgglomerativeClustering(n_clusters=1, linkage="ward").fit(x)
+                n_clusters = clustering.labels_.max() + 1
+            else:
+                clustering = AgglomerativeClustering(n_clusters=min_clusters, linkage="ward").fit(x)
+                n_clusters = clustering.labels_.max() + 1
         labels.append(clustering.labels_)
+
     return labels
 
 
@@ -100,17 +110,24 @@ def get_wordcontext_layout(loader, layers, word):
         layers = [min(i, loader.n_layer - 1) for i in range(0, loader.n_layer + 1,
                                                             loader.n_layer // (config.word_context_max_layers - 1))]
     original_word = word
-    word = stem(word)
-    labels = clustering_for_word(loader, word)
+    stemmed = False
+    if word in loader.original_inverted_list and len(loader.original_inverted_list[word]) > 20:
+        pass
+    else:
+        word = stem(word)
+        stemmed = True
+    inverted_list = loader.inverted_list[word] if stemmed else loader.original_inverted_list[word]
+    print(stemmed, inverted_list)
+    labels = clustering_for_word(loader, word, inverted_list)
     m = len(labels[0])
     neurons = []
     edges = []
     neuron_id = 0
     layer_neuron = {}
     neuron_dict = {}
-    max_position = max([p[1] for p in loader.inverted_list[word]]) + 1
+    max_position = max([p[1] for p in inverted_list]) + 1
     position_sum = [0] * max_position
-    for p in loader.inverted_list[word]:
+    for p in inverted_list:
         position_sum[p[1]] += 1
     for i in range(1, len(position_sum)):
         position_sum[i] += position_sum[i - 1]
@@ -133,7 +150,7 @@ def get_wordcontext_layout(loader, layers, word):
             position_clusters.append(
                 [f'{original_word}$in position {j} to {i}'])
         for l in range(m):
-            p = loader.inverted_list[word][l]
+            p = inverted_list[l]
             if p[1] >= j and p[1] <= i:
                 labels[0][l] = current_label
         j = i + 1
@@ -177,7 +194,7 @@ def get_wordcontext_layout(loader, layers, word):
         for k in range(n_clusters):
             patterns = []
             size = 1
-            idxs = [loader.inverted_list[word][i][0]
+            idxs = [inverted_list[i][0]
                     for i in range(m) if labels[layer][i] == k]
             for i in idxs:
                 size += 1
@@ -210,8 +227,7 @@ def get_wordcontext_layout(loader, layers, word):
                 keywords = get_sentences_keywords(loader, idxs, layer)
                 ratio = patterns[0][1] / keywords[0]['value'] * \
                     0.75 if len(patterns) > 0 else 1
-                keywords = [(x['word'], x['value'] * ratio, 'self')
-                            for x in keywords if x['entropy'] > loader.threshold_gamma][:15]
+                keywords = [(x['word'], x['value'] * ratio, 'self') for x in keywords if x['entropy'] > .55][:15]
                 keywords = [x for x in keywords if x[0] not in pattern_str]
                 patterns = patterns + keywords
 
@@ -221,7 +237,7 @@ def get_wordcontext_layout(loader, layers, word):
             if len(idxs) == 0:
                 continue
             if layer > 0:
-                contris = loader.get_word_delta_s_by_layer(idxs, layer, stem = True)
+                contris = loader.get_word_delta_s_by_layer(idxs, layer, is_stem = True)
             scores = []
             for i in idxs:
                 s1 = loader.data_prediction_score[i][loader.main_index]
@@ -242,7 +258,7 @@ def get_wordcontext_layout(loader, layers, word):
                 'in_edges': [],
                 'out_edges': [],
                 'prediction_score': float(np.mean(scores)),
-                'contri': contris[word] if layer > 0 else {'pos': 0, 'neg': 0, 'neu': len(idxs), 'avg': 0},
+                'contri': contris[stem(word)] if layer > 0 else {'pos': 0, 'neg': 0, 'neu': len(idxs), 'avg': 0},
                 'size': size / m,
             }
             neurons.append(neuron)

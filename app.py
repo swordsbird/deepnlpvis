@@ -1,13 +1,14 @@
 import numpy as np
 import json
 import random
+import config
 
 from flask import Flask, jsonify, request, render_template
 from flask_cors import CORS
 from flask_compress import Compress
 from pytorch_pretrained_bert import BertTokenizer
 from utils import entropy_to_contribution, word_ordering, stem
-from loader import init_loader, update_select_index
+from loader import init_loader, update_loader
 from flow_layout import get_network_layout
 from keyword_extractor import get_sentences_keywords
 from context_layout import get_wordcontext_layout
@@ -16,7 +17,7 @@ from config import n_percentile, n_percentile_words, word_contribution_max_layer
 tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
 get_grids_ret = None
 loader = init_loader()
-update_select_index(loader, [1, 0])
+#update_loader(loader, [3, 2])
 
 sentence_network_cache = {}
 word_network_cache = {}
@@ -24,9 +25,9 @@ word_network_cache = {}
 
 def get_word_info(loader, word):
     info = np.zeros(loader.n_layer)
-    for p in loader.inverted_list[word]:
+    for p in loader.original_inverted_list[word]:
         info = info + loader.layer_entropy[p[0]][-loader.n_layer:, p[1]]
-    info = info / len(loader.inverted_list[word])
+    info = info / len(loader.original_inverted_list[word])
     return info
 
 
@@ -102,7 +103,6 @@ def get_word_contribution(loader, idxs, attrs={}):
         all_contri = []
         contri = {}
         curr_words = 0
-        v_distribution = []
         for i in idxs:
             instance_weight = 1
             if loader.is_correct(i) and not loader.is_overview(idxs):
@@ -113,28 +113,26 @@ def get_word_contribution(loader, idxs, attrs={}):
                     represents[key] = {}
                 norm_contri[key] = norm_contri.get(
                     key, 0) + norm_contri0 * instance_weight
+                all_entropy.append(contri0)
                 contri[key] = contri.get(key, 0) + contri0 * instance_weight
                 if word not in loader.stop_words:
-                    all_entropy.append(contri0)
-                    all_contri.append(loader.delta_s_value[i][layer, index])
-                    v_distribution.append(contri0)
-                    if contri0 > loader.threshold_gamma:
+                    if contri0 > .5:
                         curr_words += 1
         for key in norm_contri:
             norm_contri[key] = norm_contri[key] / frequency[key]
             contri[key] = contri[key] / frequency[key]
+            #all_entropy.append(contri[key])
+
         layer_value = float(curr_words / total_words)
-        if last_value < layer_value:
-            layer_value = last_value
+        layer_value = min(last_value - 2e-2, layer_value)
+        start_to_drop = layer_value + 1e-3 < (0.97 - 6e-2 * (layer < (loader.n_layer // 2 - 1)))
+        if not start_to_drop:
+            layer_value = 1
         last_value = layer_value
         all_entropy = sorted(all_entropy)
-        all_contri = sorted(all_contri)
 
         n_ticks = 100
         entropy_ticks = []
-        contri_ticks = []
-        for i in range(n_ticks):
-            contri_ticks.append(all_contri[len(all_contri) * i // n_ticks])
         for i in range(n_ticks):
             entropy_ticks.append(all_entropy[len(all_entropy) * i // n_ticks])
 
@@ -169,22 +167,18 @@ def get_word_contribution(loader, idxs, attrs={}):
                 continue
             yaxis_count[t] += 1
             status = 'retained'
-            if contri0 < loader.threshold_gamma:
-                old_e = previous_contri.get(wordkey[word], 1e10)
-                if old_e < loader.threshold_gamma:
-                    status = 'old_discarded'
-                else:
-                    status = 'new_discarded'
-            all_words.append({
-                'word': word,
-                'value': round(float(importance), 4),
-                'frequency': round(float(tf), 4),
-                'entropy': round(float(contri0), 4),
-                'contri': polarity_by_layer[layer][word],
-                'score': loader.word_prediction_score[word],
-                'yaxis': yaxis,
-                'status': status,
-            })
+
+            if word in loader.word_prediction_score:
+                all_words.append({
+                    'word': word,
+                    'value': round(float(importance), 4),
+                    'frequency': round(float(tf), 4),
+                    'entropy': round(float(contri0), 4),
+                    'contri': polarity_by_layer[layer][word],
+                    'score': loader.word_prediction_score[word],
+                    'yaxis': yaxis,
+                    'status': status,
+                })
 
         layer_words.append(all_words)
         layers.append({
@@ -247,10 +241,10 @@ Compress(app)
 def get_word_idxs():
     data = json.loads(request.get_data(as_text=True))
     word = data['word']
-    word = stem(word)
-    if word in loader.inverted_list:
-        idxs = [p[0] for p in loader.inverted_list[word]]
-        pos = [p[1] for p in loader.inverted_list[word]]
+    #word = stem(word)
+    if word in loader.original_inverted_list:
+        idxs = [p[0] for p in loader.original_inverted_list[word]]
+        pos = [p[1] for p in loader.original_inverted_list[word]]
         info = get_word_info(loader, word)
         info = [float(entropy_to_contribution(x)) for x in info]
     else:
@@ -319,7 +313,7 @@ def get_scatterplot():
     for t in scatters:
         t['y'] = round((t['y'] - y0) / (y1 - y0), 4)
     delta = 0
-    max_gap = 0.03
+    max_gap = 0.05
     for i in range(1, len(scatters)):
         scatters[i]['y'] -= delta
         curr_d = scatters[i]['y'] - scatters[i - 1]['y']
@@ -381,12 +375,12 @@ def get_sentences():
 def get_word_sentences():
     data = json.loads(request.get_data(as_text=True))
     word = data.get('word', None)
-    word = stem(word)
+    #word = stem(word)
     if word == None or word not in loader.all_word_labels:
         ret = {'sentences': [], 'pos': 0, 'neg': 0, 'tot': 0}
     else:
         labels = loader.all_word_labels[word]
-        idxs = [x[0] for x in loader.all_inverted_list[word]]
+        idxs = [x[0] for x in loader.all_inverted_list[word] if loader.all_data_word[x[0]][x[1]] == word]
         ret = {
             'sentences': [{'text': loader.all_data_text[i], 'label': loader.all_data_label[i], 'index': i} for i in idxs],
             'pos': len([x for x in labels if x == loader.data_labels[0]]),
@@ -395,24 +389,39 @@ def get_word_sentences():
     return jsonify(ret)
 
 
-@app.route('/api/confusion_matrix', methods=['POST'])
+@app.route('/api/model_info', methods=['POST'])
 def get_confusion_matrix():
     ret = {
         'labels': loader.data_labels,
         'label_names': loader.data_label_name,
-        'selection': [loader.main_index, loader.second_index],
+        'xi_values': loader.xi_values,
+        'dataset_name': loader.dataset_name,
+        'model_name': loader.model_name,
+        'color_scheme': loader.color_scheme,
         'matrix': loader.get_confusion_matrix(),
     }
     return jsonify(ret)
+
+@app.route('/api/select_parameters', methods=['POST'])
+def select_parameters():
+    data = json.loads(request.get_data(as_text=True))
+    xi = data.get('xi', config.threshold_xi)
+    color = data.get('color', None)
+    loader.threshold_xi = xi
+    loader.color_scheme = color
+    update_loader(loader)
+    return jsonify({ 'status': 'success' })
 
 
 @app.route('/api/select_class', methods=['POST'])
 def select_class():
-    ret = {
-        'selection': [loader.main_index, loader.second_index],
-        'matrix': loader.get_confusion_matrix(),
-    }
-    return jsonify(ret)
+    data = json.loads(request.get_data(as_text=True))
+    selected = data.get('selected', [1, 0])
+    if selected[0] < selected[1]:
+        selected = [selected[1], selected[0]]
+    if loader.main_index != selected[0] or loader.second_index != selected[1]:
+        update_loader(loader, selected)
+    return jsonify({ 'status': 'success' })
 
 
 @app.route('/api/all_sentences', methods=['POST'])

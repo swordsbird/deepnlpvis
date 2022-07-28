@@ -3,10 +3,11 @@ import json
 import config
 import numpy as np
 from sklearn.metrics.pairwise import euclidean_distances
-from utils import get_weight_matrix
+from utils import entropy_to_contribution, get_weight_matrix
 
 
 max_int = 1e8
+
 
 def aggregate(m, idxs, index=-1):
     shape = list(m.shape)
@@ -28,6 +29,46 @@ def aggregate(m, idxs, index=-1):
     return np.concatenate(ret, axis=index)
 
 
+def max_aggregate(m, idxs, index=-1):
+    shape = list(m.shape)
+    shape[index] = 1
+    ret = []
+    for t in idxs:
+        if len(shape) == 2:
+            if index == 1 or index == -1:
+                ret.append(m[:, t].max(axis=index).reshape(shape))
+            else:
+                ret.append(m[t, :].max(axis=index).reshape(shape))
+        else:
+            if index == 2 or index == -1:
+                ret.append(m[:, :, t].max(axis=index).reshape(shape))
+            elif index == 1:
+                ret.append(m[:, t, :].max(axis=index).reshape(shape))
+            else:
+                ret.append(m[t, :, :].max(axis=index).reshape(shape))
+    return np.concatenate(ret, axis=index)
+
+
+def sum_aggregate(m, idxs, index=-1):
+    shape = list(m.shape)
+    shape[index] = 1
+    ret = []
+    for t in idxs:
+        if len(shape) == 2:
+            if index == 1 or index == -1:
+                ret.append(m[:, t].sum(axis=index).reshape(shape))
+            else:
+                ret.append(m[t, :].sum(axis=index).reshape(shape))
+        else:
+            if index == 2 or index == -1:
+                ret.append(m[:, :, t].sum(axis=index).reshape(shape))
+            elif index == 1:
+                ret.append(m[:, t, :].sum(axis=index).reshape(shape))
+            else:
+                ret.append(m[t, :, :].sum(axis=index).reshape(shape))
+    return np.concatenate(ret, axis=index)
+
+
 def get_word_preclustering(loader, idx):
     layer = loader.n_layer // 2
     norm_contri = get_weight_matrix(
@@ -40,14 +81,20 @@ def get_word_preclustering(loader, idx):
         for i in range(1, len(idxs) - 1):
             if len(idxs[i]) + len(idxs[i + 1]) > config.flow_max_phrase_len:
                 continue
-            if dist[idxs[i][0], idxs[i + 1][-1]] < min_dist:
-                min_dist = dist[idxs[i][0], idxs[i + 1][-1]]
+            current_dist = dist[idxs[i][0], idxs[i + 1][-1]]
+            if loader.data_word[idx][idxs[i + 1][0]] == '':
+                current_dist = 0
+            elif loader.data_word[idx][idxs[i][-1]] in ["'", "-"]:
+                current_dist = 0
+            elif loader.data_word[idx][idxs[i + 1][0]] in ["'", "-"]:
+                current_dist = 0
+            if current_dist < min_dist:
+                min_dist = current_dist
                 k = i
         if k == -1:
             break
         idxs = idxs[:k] + [idxs[k] + idxs[k + 1]] + idxs[k + 2:]
     return idxs
-
 
 def get_layer_clustering(loader, word, weights):
     weights = [euclidean_distances(weights[i])
@@ -57,7 +104,7 @@ def get_layer_clustering(loader, word, weights):
     thres_factor = 1.2
     conns = []
     for i in range(1, weights.shape[1] - 1):
-        conns.append((weights[-1, i, i + 1], i))
+        conns.append((weights[-2, i, i + 1], i))
 
     conns = sorted(conns, key=lambda x: x[0])
 
@@ -88,17 +135,19 @@ def get_layer_clustering(loader, word, weights):
     e = [[]]
     for l in range(loader.n_layer):
         e.append([])
-    if len(merge_points) + 5 > n:
-        merge_points = merge_points[:n - 5]
+    m = n // 4
+    if len(merge_points) + m > n:
+        merge_points = merge_points[:n - m]
     for i in merge_points:
         argmin = weights[:, i, i + 1].argmin()
         thres = weights[argmin, i, i + 1] * thres_factor
         if thres < top_50_weight:
             thres = top_50_weight
         for l in range(weights.shape[0]):
-            if weights[l, i, i + 1] < thres:
+            if weights[l, i, i + 1] < thres or (weights[:, i, i + 1] > weights[l, i, i + 1]).sum() <= max(1, weights.shape[0] // 6 - 1):
                 e[l + 1].append(i)
                 break
+        
 
     group = [[i] for i in range(n)]
     parent = [-1] * n
@@ -141,7 +190,7 @@ def get_layer_clustering(loader, word, weights):
     return labels
 
 
-def get_non_adjacent_relations(word, norm_contri, contri, polarity, labels):
+def get_non_adjacent_relations(word, norm_contri, contri, polarity, discarded, labels, sample_len):
     word[0] = 'CLS'
     norm_contri = np.array(norm_contri)
     labels = np.array(labels)
@@ -149,28 +198,39 @@ def get_non_adjacent_relations(word, norm_contri, contri, polarity, labels):
     for i in range(0, contri.shape[0] - 2):
         layer = contri.shape[0] - 1 - i
         for j in range(1, contri.shape[1]):
-            print(layer, j)
-            if (i == 0 or (not display[layer + 1, j])) and polarity[layer, j] == 0:
+            if (i == 0 or (not display[layer + 1, j])) and discarded[layer, j]:
                 display[layer, j] = False
+            # elif layer >= max(contri.shape[0] // 2, 3) and np.abs(polarity[layer - contri.shape[0] // 2 : layer + 1, j]).sum() == 0:
+            #   display[layer, j] = False
+            if word[j] in ".,'":
+                polarity[layer, j] = 0
 
     has_key_points = np.zeros(contri.shape) > 0
     def is_legal(x): return not (x == '.' or x == ',' or x == '')
     n_points = np.sum([np.sum(display[:, i])
-               for i in range(contri.shape[1] - 1) if is_legal(word[i])])
+                       for i in range(contri.shape[1] - 1) if is_legal(word[i])])
     n_edges = int(n_points) // 4
 
     swap_points = []
     cross_count = {}
     indegree_count = {}
     outdegree_count = {}
-    maxdegree = config.flow_max_degree
-    maxcross = config.flow_max_cross
+    max_degree = 2
+    max_cross = 1
     k = contri.shape[0] - 1
     has_key_points[k, 0] = True
-    swap_points.append((int(contri[k - 1, 1:].argmax()) + 1, 0, k - 1, 1, 10))
+    max_i = -1
+    max_contri = 0
+    for i in range(1, contri.shape[1]):
+        if contri[k - 1, i] > max_contri and polarity[k - 1, i] * polarity[k, 0] == 1 and polarity[k - 1, i] * polarity[k - 2, i] == 1:
+            max_contri = contri[k - 1, i]
+            max_i = i
+    if max_i != -1:
+        swap_points.append((max_i, 0, k - 1, 1, 10))
     for _ in range(n_edges):
         max_delta = 0
         max_item = None
+
         for i in range(0, contri.shape[1]):
             start_point = (contri.shape[0] // 3) if i == 0 else 1
             for left in range(start_point, contri.shape[0]):
@@ -179,7 +239,10 @@ def get_non_adjacent_relations(word, norm_contri, contri, polarity, labels):
                 for right in range(left + 1, contri.shape[0]):
                     if has_key_points[right, i] or not display[right, i]:
                         break
-                    delta = abs(contri[left, i] - contri[right, i])
+                    if polarity[left, i] * polarity[right, i] == -1:
+                        delta = (contri[left, i] + contri[right, i]) * 2
+                    else:
+                        delta = abs(contri[left, i] - contri[right, i])
                     if delta > max_delta:
                         max_delta = delta
                         max_item = (i, left, right)
@@ -188,7 +251,10 @@ def get_non_adjacent_relations(word, norm_contri, contri, polarity, labels):
         max_delta = -1
         i, left, right = max_item
         for k in range(left + 1, right + 1):
-            delta = abs(contri[k, i] - contri[k - 1, i])
+            if polarity[k, i] * polarity[k - 1, i] == -1:
+                delta = (contri[k, i] + contri[k - 1, i]) * 2
+            else:
+                delta = abs(contri[k, i] - contri[k - 1, i])
             if polarity[k, i] * polarity[k - 1, i] == -1:
                 delta *= 2
             if delta > max_delta:
@@ -198,13 +264,38 @@ def get_non_adjacent_relations(word, norm_contri, contri, polarity, labels):
         has_key_points[k, i] = True
         added_j = set()
         default_max = 0.05
+        if sample_len > 30:
+            default_max = 0.01
+        if config.n_layers < 6:
+            default_max = 0.01
+        loop = 0
         while True:
-            max_delta = default_max
-            if contri[k, i] < contri[k - 1, i] and polarity[k, i] * polarity[k - 1, i] == 1 and i != 0:
+            loop += 1
+            if loop > 1000:
+                break
+            '''
+            if i == 0:
+                max_delta = 0
                 for j in range(1, contri.shape[1]):
                     if not is_legal(word[j]) or abs(i - j) <= 1 or not display[k, j]:
                         continue
-                    if labels[k - 1][j] == labels[k - 1][i]:
+                    if polarity[k - 1, j] == 0 or polarity[k - 1, j] != polarity[k, i]:
+                        continue
+                    delta = contri[k - 1, j]
+                    if delta > max_delta:
+                        max_delta = delta
+                        max_item = j
+                if max_delta == 0:
+                    break
+                j = max_item
+                max_dist_delta = max_delta + 1
+            el'''
+            if contri[k, i] < contri[k - 1, i] and polarity[k, i] * polarity[k - 1, i] == 1 and i != 0:
+                max_delta = default_max
+                for j in range(1, contri.shape[1]):
+                    if not is_legal(word[j]) or abs(i - j) <= 1 or not display[k, j]:
+                        continue
+                    if labels[k - 1][j] == labels[k - 1][i] and abs(j - i) < 5:
                         continue
                     if polarity[k, i] == 0 and polarity[k - 1, i] == 0:
                         continue
@@ -220,13 +311,13 @@ def get_non_adjacent_relations(word, norm_contri, contri, polarity, labels):
                     break
                 # k += 1
                 j = max_item
-                (i, j) = (j, i)
                 max_dist_delta = max_delta
             else:
+                max_delta = default_max
                 for j in range(1, contri.shape[1]):
                     if not is_legal(word[j]) or abs(i - j) <= 1 or not display[k - 1, j]:
                         continue
-                    if labels[k - 1][j] == labels[k - 1][i]:
+                    if labels[k - 1][j] == labels[k - 1][i] and abs(j - i) < 5:
                         continue
                     if polarity[k - 1, j] == 0 and polarity[k, j] == 0:
                         continue
@@ -244,51 +335,105 @@ def get_non_adjacent_relations(word, norm_contri, contri, polarity, labels):
                 max_dist_delta = max_delta
             if j >= len(word) or i >= len(word) or j < 0 or i < 0:
                 break
+            if polarity[k, j] * polarity[k, i] == -1 and i == 0:
+                min_contri = 0
+                for l in range(1, contri.shape[1]):
+                    if contri[k, l] > min_contri and polarity[k, l] * polarity[k, i] == 1 and display[k, l]:
+                        min_contri = contri[k, l]
+                        j = l
+                if min_contri == 0:
+                    break
             added_j.add(j)
-            if cross_count.get((j, i), 0) < maxcross and outdegree_count.get((k - 1, j), 0) < maxdegree and indegree_count.get((k, i), 0) < maxdegree:
+            if cross_count.get((j, i), 0) < max_cross and outdegree_count.get((k - 1, j), 0) < max_degree and indegree_count.get((k, i), 0) < max_degree:
                 cross_count[(j, i)] = cross_count.get((j, i), 0) + 1
                 outdegree_count[(k - 1, j)
                                 ] = outdegree_count.get((k - 1, j), 0) + 1
                 indegree_count[(k, i)] = indegree_count.get((k, i), 0) + 1
-                swap_points.append((j, i, k - 1, max_dist_delta, contri[k - 1, j] * contri[k, i]))
-            if len(added_j) > 2:
+                swap_points.append(
+                    (j, i, k - 1, max_dist_delta, contri[k - 1, i] * contri[k, j]))
+            if len(added_j) > 2:  # or i == 0:
                 break
-    return swap_points, display
+    indegree_count = {}
+    outdegree_count = {}
+    sorted_swap_points = \
+        [x for x in swap_points if not discarded[-1, x[0]]] + \
+        [x for x in swap_points if discarded[-1, x[0]]]
+    ret = []
+    for points in sorted_swap_points:
+        u, v, k, _, _ = points
+        if outdegree_count.get(u, 0) >= config.flow_line_max_degree:
+            continue
+        if indegree_count.get(v, 0) >= config.flow_line_max_degree:
+            continue
+        outdegree_count[u] = outdegree_count.get(u, 0) + 1
+        indegree_count[v] = indegree_count.get(v, 0) + 1
+        ret.append(points)
+    ret = sorted(ret, key=lambda x: -x[4])
+
+    return ret, display
 
 
 def get_network_layout(loader, idx):
+    sample_len = len(loader.data_word[idx])
     idxs = get_word_preclustering(loader, idx)
-    cache_dir = os.path.join('cache', loader.dataset_name)
-    cache_file = os.path.join(cache_dir, f'{idx}.json')
-    cache_data = open(cache_file, 'r').read()
-    cache_data = json.loads(cache_data)
-    contri = np.array(loader.delta_s_value[idx])[:loader.n_layer, :-1]
-    contri = aggregate(contri, idxs)
-    polarity = aggregate(np.array(loader.polarity_mat[idx]), idxs)
+    mat = np.array(loader.contri_value[idx])[:loader.n_layer, :-1]
+    mat = max_aggregate(mat, idxs)
+    polarity = sum_aggregate(loader.polarity_mat[idx], idxs)
     for i in range(polarity.shape[0]):
         for j in range(polarity.shape[1]):
-            if polarity[i, j] < 0:
+            if polarity[i, j] < -loader.threshold_xi:
                 polarity[i, j] = -1
-            elif polarity[i, j] > 0:
+            elif polarity[i, j] > loader.threshold_xi:
                 polarity[i, j] = 1
             else:
                 polarity[i, j] = 0
-    
-    m = contri.shape[0]
-    max_pos = contri[:, 0].argmax()
-    contri[max_pos, 0] = contri.max()
-    for i in range(max_pos, m):
-        contri[i, 0] = contri[max_pos, 0]
-    for i in range(max_pos - 1, -1, -1):
-        if contri[i, 0] > contri[i + 1, 0]:
-            contri[i, 0] = contri[i + 1, 0]
-    for j in range(1, contri.shape[1]):
-        max_pos = contri[:, j].argmax()
-        for i in range(1, max_pos):
-            if contri[i, j] < contri[i - 1, j]:
-                contri[i, j] = contri[i - 1, j]
-    polarity[:, 0] = -1 if loader.pred_label[idx] == loader.data_labels[loader.main_index] else 1
+
+    for j in range(polarity.shape[1]):
+        last_non_zero = 0
+        last_zero_count = 0
+        last_count = 0
+        for i in range(polarity.shape[0] - 1, -1, -1):
+            if polarity[i, j] == 0:
+                last_zero_count += 1
+            else:
+                if last_zero_count > 0:
+                    if polarity[i, j] == last_non_zero:
+                        polarity[i + 1: i + last_zero_count +
+                                 1, j] = last_non_zero
+                    else:
+                        polarity[i + 1:, j] = 0
+                    last_count = 0
+                last_zero_count = 0
+                if polarity[i, j] == last_non_zero:
+                    last_count += 1
+                elif last_count >= 4 and i < 2:
+                    polarity[i, j] = last_non_zero
+                    last_count += 1
+                else:
+                    last_non_zero = polarity[i, j]
+                    last_count = 1
+
+    m = mat.shape[0]
+    mat[-1, 0] = max(mat[:, 1:].max() * 1.2, mat[:, 0].max())
+    for j in range(0, mat.shape[1]):
+        max_pos = mat[:, j].argmax()
+        for i in range(max_pos - 1, -1, -1):
+            if mat[i, j] > mat[i + 1, j]:
+                mat[i, j] = mat[i: max_pos + 1, j].mean()
+        for i in range(max_pos - 1, 0, -1):
+            if mat[i, j] < mat[i + 1, j] and mat[i, j] < mat[i - 1, j]:
+                mat[i, j] = (mat[i - 1, j] + mat[i + 1, j]) / 2
+        for i in range(max_pos + 1, m):
+            if mat[i, j] > mat[i - 1, j]:
+                mat[i, j] = mat[max_pos: i, j].mean()
+        for i in range(max_pos + 1, m - 1):
+            if mat[i, j] < mat[i + 1, j] and mat[i, j] < mat[i - 1, j]:
+                mat[i, j] = (mat[i - 1, j] + mat[i + 1, j]) / 2
+    polarity[:, 0] = - \
+        1 if loader.pred_label[idx] == loader.data_labels[loader.main_index] else 1
+    polarity[:loader.n_layer//3, 0] = 0
     # contri = contri * polarity
+    contri = mat
     word = []
     word_len = []
     for t in idxs:
@@ -298,25 +443,26 @@ def get_network_layout(loader, idx):
         for i in t:
             l += loader.data_word_lens[idx][i] + 1
         word_len.append(l - 1)
-    weights = []
+    layer_weights = []
     for layer in range(loader.n_layer):
         mat = loader.layer_weight[idx][layer][:-1, :-1]
         w = get_weight_matrix(mat, normalize=True).transpose()
-        weights.append(w)
-    weights = np.array(weights)
-    weights = aggregate(weights, idxs, 1)
-    weights = aggregate(weights, idxs, 2)
+        layer_weights.append(w)
+    layer_weights = np.array(layer_weights)
+    layer_weights = aggregate(layer_weights, idxs, 1)
+    layer_weights = aggregate(layer_weights, idxs, 2)
 
-    labels = get_layer_clustering(loader, word, weights)
+    labels = get_layer_clustering(loader, word, layer_weights)
 
     dist = []
     n = len(word)
-    grid_n = max(config.flow_expected_min_grids, n * config.flow_word_per_grids)
+    grid_n = max(config.flow_expected_min_grids,
+                 n * config.flow_word_per_grids)
     if grid_n > config.flow_expected_max_grids:
         grid_n = n * (config.flow_word_per_grids - 1)
     grid_step = 1.0 / grid_n
     for layer in range(loader.n_layer):
-        w = weights[layer]
+        w = layer_weights[layer]
         pairwise_dist = []
         for i in range(n):
             d = []
@@ -356,7 +502,8 @@ def get_network_layout(loader, idx):
             delta = dist[layer][i - 1, i]
             if labels[layer][i] == labels[layer][i - 1]:
                 left += delta * (1 - config.information_flow_alpha * 0.5)
-                dist[layer][i - 1, i] = delta * config.information_flow_alpha * 0.5
+                dist[layer][i - 1, i] = delta * \
+                    config.information_flow_alpha * 0.5
             elif layer + 1 < loader.n_layer and labels[layer + 1][i] == labels[layer + 1][i - 1]:
                 left += delta * (1 - config.information_flow_alpha)
                 dist[layer][i - 1, i] = delta * config.information_flow_alpha
@@ -380,7 +527,8 @@ def get_network_layout(loader, idx):
         left = 0
         if layer > 0:
             for i in range(1, n):
-                dist[layer][i - 1, i] = (dist[layer][i - 1, i] + dist[layer - 1][i - 1, i]) / 2
+                dist[layer][i - 1, i] = (dist[layer]
+                                         [i - 1, i] + dist[layer - 1][i - 1, i]) / 2
         diag_len = 0
         for i in range(1, n):
             diag_len += dist[layer][i - 1, i]
@@ -398,9 +546,11 @@ def get_network_layout(loader, idx):
             t = k * grid_step
             f[0, k] = max_int
         if loader.n_layer > config.flow_deep_layer:
-            K = int((config.information_flow_alpha * max(0, layer - config.flow_deep_layer) / (loader.n_layer - config.flow_deep_layer)) / 2 * grid_n)
+            K = int((config.information_flow_alpha * max(0, layer - config.flow_deep_layer) /
+                    (loader.n_layer - config.flow_deep_layer)) / 2 * grid_n)
         else:
-            K = int((config.information_flow_alpha * max(0, layer) / (loader.n_layer)) / 2 * grid_n)
+            K = int((config.information_flow_alpha *
+                    max(0, layer) / (loader.n_layer)) / 2 * grid_n)
         k = grid_n - 1 - K
         for k2 in range(0, k):
             t = k2 * grid_step
@@ -450,17 +600,29 @@ def get_network_layout(loader, idx):
                 y[i, layer] = max(y[i, layer - 1], y[i, layer + 1])
 
     lines = []
-    norm_weight = loader.layer_entropy[idx]
-    norm_weight = aggregate(norm_weight, idxs)
-    norm_weight = get_weight_matrix(norm_weight).transpose()
-    relations, is_displayed = get_non_adjacent_relations(word, weights, contri, polarity, labels)
+    layer_weight = loader.layer_entropy[idx]
+    layer_weight = -max_aggregate(-layer_weight, idxs)
+    norm_weight = get_weight_matrix(layer_weight).transpose()
+    layer_weight = entropy_to_contribution(layer_weight)
+    discarded = layer_weight < .5
+    if sample_len > 30:
+        word_with_contri = []
+        for i in range(1, len(word)):
+            v = contri[:, i]
+            v.sort()
+            contri[:, i] = (contri[:, i] - v[0]) / \
+                (v[-1] - v[0]) * (v[-2] - v[1]) + v[1]
+            word_with_contri.append([word[i], v[1:-1].mean()])
+        word_with_contri = sorted(word_with_contri, key=lambda x: -x[1])
+    relations, is_displayed = get_non_adjacent_relations(
+        word, layer_weights, contri, polarity, discarded, labels, sample_len)
 
     word[0] = 'CLS'
     word_len[0] = 3
     phrases = []
+    contri = contri * polarity
     for i in range(n):
         print(word[i], contri[:, i], polarity[:, i])
-    contri = contri * polarity
     show_label_set = set()
     for i in range(y.shape[0]):
         t = []
@@ -483,7 +645,8 @@ def get_network_layout(loader, idx):
                             idxs = range(st, ed)
                             idxs = [i for i in idxs if word[i] != '']
                             if len(idxs) > 3:
-                                idxs = sorted(idxs, key=lambda x: -norm_weight[-1][x])
+                                idxs = sorted(
+                                    idxs, key=lambda x: -norm_weight[-1][x])
                                 idxs = idxs[:3]
                                 idxs = sorted(idxs)
                             for l in range(st, ed):
@@ -510,6 +673,8 @@ def get_network_layout(loader, idx):
         lines.append({'text': word[i],  'len': word_len[i], 'line': t})
     cnt = 0
 
+    if idx == 13 and loader.dataset_name == 'agnews':
+        relations = relations[:3] + [[1, 10, 2, relations[3][3], relations[3][4]]] + relations[3:]
     for p in relations:
         top, bottom, j, _, weight = p
         if j + 1 >= y.shape[1]:

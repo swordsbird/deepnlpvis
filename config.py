@@ -1,40 +1,52 @@
 home_path = '/home/lizhen/data/'
-threshold_xi = 1e-5
-threshold_gamma = 0.6
-#threshold_xi = 10e-6
-#threshold_gamma = 0.4
+threshold_xi = 0.02
 information_flow_alpha = 0.4
 information_flow_beta = 5
 n_percentile = 10
-n_percentile_words = 20
+n_percentile_words = 40
 word_context_max_layers = 4
 word_contribution_max_layers = 6
-stop_words = ['ziff', 'woe', 'lt', 'gt', 'quot', 'rsquo', 'quickinfo', 'quote', 'arial', 'com', 'href', 'aspx', 'helvetica', 'serif', 'www', 'fullquote', 'ap', 'afp', 'sans', 'font', 'verdana']# 'alligators', 'crocodilians', 'photoshop', 'llinas', 'brockton', 'puncha', 'manhood']
+stop_words = ['ziff', 'll', 'woe', 'lt', 'gt', 'quot', 'rsquo', 'quickinfo', 'quote', 'arial', 'com', 'href', 'aspx', 'helvetica', 'serif', 'www', 'fullquote', 'ap', 'afp', 'sans', 'font', 'verdana', 'paymentshalliburton', 'bundlethe', 'managerssan', 'fi', 'realregulators', 'extraordinarily', 'adorns', 'blaxploitation', 'tantamount', 'juliette', 'dealregulators']# 'alligators', 'crocodilians', 'photoshop', 'llinas', 'brockton', 'puncha', 'manhood']
 
 project_name = 'DeepNLPVis'
 
 dataset_name = 'sst2_10k'
+data_name = 'sst2'
 model_name = 'bert'
 n_samples = 4000
+n_layers = 12
 
 '''
+dataset_name = 'sst2_lstm_pretrained'
+data_name = 'sst2'
+model_name = 'lstm'
+n_samples = 4033
+n_layers = 4
+
 dataset_name = 'sst2_10k'
+data_name = 'sst2'
 model_name = 'bert'
 n_samples = 4000
+n_layers = 12
 
 dataset_name = 'sst2_lstm'
+data_name = 'sst2'
 model_name = 'lstm'
 n_samples = 4000
+n_layers = 4
 
 dataset_name = 'agnews'
+data_name = 'news'
 model_name = 'bert'
 n_samples = 2000
+n_layers = 12
 '''
-
-
+#polarity = 'contri'
+polarity = 'delta_s'
 max_keyword_num = 500
-flow_max_degree = 3
-flow_max_cross = 4
+flow_point_max_degree = 1
+flow_point_max_cross = 2
+flow_line_max_degree = 4
 flow_max_phrase_len = 10
 flow_n_lines = 25
 flow_expected_min_grids = 60
@@ -45,5 +57,5 @@ context_max_n_clusters = 7
 context_min_n_clusters = 2
 context_distance_threshold = 3
 context_distance_step = 1.1
-
 frequent_phrase_step = 1.2
+n_distribution_sample = 1000

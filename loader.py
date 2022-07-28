@@ -4,7 +4,7 @@ import os
 import numpy as np
 from data_loader import DataLoader
 from nltk.corpus import stopwords
-from config import home_path, dataset_name, threshold_gamma, threshold_xi, n_samples
+import config
 from config import stop_words as custom_stop_words
 from utils import get_weight_matrix, entropy_to_contribution, stem 
 
@@ -26,6 +26,10 @@ def set_instance_coordinates(loader):
     data_prob = json.loads(s)
     # data prediction score -- instance's y coordinate
     loader.set_instance_prediction_score(data_prob)
+    pred_labels = []
+    for i in range(loader.size):
+        pred_labels.append(loader.data_labels[np.argmax(data_prob[i])])
+    loader.set_pred_label(pred_labels)
 
 # determining the coordinates of each word in the distribution view
 
@@ -48,7 +52,6 @@ def set_word_coordinates(loader):
 
 
 def set_prediction(loader):
-    pred_labels = []
     loader.all_new_s = []
     loader.all_old_s = []
     for idx in range(loader.size):
@@ -58,7 +61,6 @@ def set_prediction(loader):
         cache_data = json.loads(cache_data)
         new_scores = cache_data['contris']
         old_s = cache_data['logits']
-        pred_labels.append(loader.data_labels[np.argmax(old_s)])
         instance_new_s = []
         for layer in range(loader.n_layer):
             layer_new_s = []
@@ -67,7 +69,6 @@ def set_prediction(loader):
             instance_new_s.append(layer_new_s)
         loader.all_new_s.append(instance_new_s)
         loader.all_old_s.append(old_s)
-    loader.set_pred_label(pred_labels)
 
 
 def layer_weight_preprocess(loader, idxs, layer):
@@ -97,23 +98,29 @@ def weight_preprocess(loader):
     for layer in range(loader.n_layer):
         layer_weight_preprocess(loader, range(loader.size), layer)
 
-def update_select_index(loader, indexes):
-    [main_index, second_index] = indexes
-    loader.set_main_index(main_index)
-    loader.set_second_index(second_index)
+def update_loader(loader, indexes = None):
+    if not indexes is None:
+        [main_index, second_index] = indexes
+        loader.set_main_index(main_index)
+        loader.set_second_index(second_index)
     loader.calc_polarity()
+    loader.calc_distribution()
     loader.calc_all_layer_delta_s()
 
+def basic_init_loader():
+    loader = DataLoader(config.home_path, config.dataset_name, config.model_name, config.n_samples)
+    return loader
+
 def init_loader():
-    loader = DataLoader(home_path, dataset_name, n_samples)
+    loader = DataLoader(config.home_path, config.dataset_name, config.model_name, config.n_samples)
     set_instance_coordinates(loader)
     set_word_coordinates(loader)
-    loader.threshold_xi = threshold_xi
-    loader.threshold_gamma = threshold_gamma
+    loader.threshold_xi = config.threshold_xi
     stop_words = []
     #stop_words = stopwords.words('english')
     stop_words = set(stop_words + custom_stop_words)
     loader.stop_words = stop_words
     set_prediction(loader)
     weight_preprocess(loader)
+    update_loader(loader, [1, 0])
     return loader
