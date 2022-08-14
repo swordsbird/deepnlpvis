@@ -1,4 +1,4 @@
-home_path = '/home/lizhen/data/'
+home_path = '.'
 threshold_xi = 0.02
 information_flow_alpha = 0.4
 information_flow_beta = 5
@@ -6,7 +6,7 @@ n_percentile = 10
 n_percentile_words = 40
 word_context_max_layers = 4
 word_contribution_max_layers = 6
-stop_words = ['ziff', 'll', 'woe', 'lt', 'gt', 'quot', 'rsquo', 'quickinfo', 'quote', 'arial', 'com', 'href', 'aspx', 'helvetica', 'serif', 'www', 'fullquote', 'ap', 'afp', 'sans', 'font', 'verdana', 'paymentshalliburton', 'bundlethe', 'managerssan', 'fi', 'realregulators', 'extraordinarily', 'adorns', 'blaxploitation', 'tantamount', 'juliette', 'dealregulators']# 'alligators', 'crocodilians', 'photoshop', 'llinas', 'brockton', 'puncha', 'manhood']
+stop_words = ['ziff', 'll', 'woe', 'lt', 'gt', 'quot', 'rsquo', 'quickinfo', 'quote', 'arial', 'com', 'href', 'aspx', 'helvetica', 'serif', 'www', 'fullquote', 'ap', 'afp', 'sans', 'font', 'verdana']
 
 project_name = 'DeepNLPVis'
 
@@ -16,32 +16,6 @@ model_name = 'bert'
 n_samples = 4000
 n_layers = 12
 
-'''
-dataset_name = 'sst2_lstm_pretrained'
-data_name = 'sst2'
-model_name = 'lstm'
-n_samples = 4033
-n_layers = 4
-
-dataset_name = 'sst2_10k'
-data_name = 'sst2'
-model_name = 'bert'
-n_samples = 4000
-n_layers = 12
-
-dataset_name = 'sst2_lstm'
-data_name = 'sst2'
-model_name = 'lstm'
-n_samples = 4000
-n_layers = 4
-
-dataset_name = 'agnews'
-data_name = 'news'
-model_name = 'bert'
-n_samples = 2000
-n_layers = 12
-'''
-#polarity = 'contri'
 polarity = 'delta_s'
 max_keyword_num = 500
 flow_point_max_degree = 1

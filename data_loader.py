@@ -130,6 +130,7 @@ class DataLoader:
         if 'lstm' in self.dataset_name:
             self.n_layer = 4
 
+        print('self.load_activation', self.load_activation)
         for i in tqdm(range(self.size)):
             file_path_1 = os.path.join(self.layer_entropy_path, f'{i}.npy')
             file_path_2 = os.path.join(
@@ -146,7 +147,7 @@ class DataLoader:
             file_path_9 = os.path.join(
                 self.layer_activation_path, f'{i}emb.npy')
             file_paths = [file_path_1, file_path_2, file_path_3,
-                          file_path_4, file_path_6, file_path_7]
+                          file_path_4, file_path_6]
 
             flag = False
             for file_path in file_paths:
@@ -190,7 +191,7 @@ class DataLoader:
             entropy = entropy.reshape(
                 (n_layer, entropy.shape[-1], entropy.shape[-1]))
             self.layer_weight.append(entropy)
-
+            
             if self.load_activation:
                 entropy = np.load(file_path_7)
                 self.word_context.append(entropy)

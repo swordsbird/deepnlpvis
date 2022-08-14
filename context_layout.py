@@ -29,12 +29,16 @@ def clustering_for_word(loader, word, inverted_list):
         tot = 0
         if layer < deep_layer:
             for p in inverted_list:
-                x.append(np.concatenate((loader.word_context[p[0]][layer, p[1]], np.array(
-                    (0.0 * loader.data_prediction_score[p[0]][loader.main_index], 0.02 * loader.data_embedding[p[0]])))))
+                if p[0] < len(loader.word_context):
+                    vec = np.concatenate((loader.word_context[p[0]][layer, p[1]], np.array(
+                        (0.0 * loader.data_prediction_score[p[0]][loader.main_index], 0.02 * loader.data_embedding[p[0]]))))
+                    x.append(vec)
         else:
             for p in inverted_list:
-                x.append(np.concatenate((loader.word_context[p[0]][layer, p[1]], np.array(
-                    (0.1 * loader.data_prediction_score[p[0]][loader.main_index], 0.02 * loader.data_embedding[p[0]])))))
+                if p[0] < len(loader.word_context):
+                    vec = np.concatenate((loader.word_context[p[0]][layer, p[1]], np.array(
+                        (0.1 * loader.data_prediction_score[p[0]][loader.main_index], 0.02 * loader.data_embedding[p[0]]))))
+                    x.append(vec)
                 tot += loader.data_prediction_score[p[0]][loader.main_index]
         tot /= len(inverted_list)
         n_clusters = max_clusters + 1
