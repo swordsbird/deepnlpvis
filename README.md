@@ -26,7 +26,7 @@ Usage Example
 -----
 Step 1: Install the requirements.
 
-Step 2: download demo data (Link: [here](https://drive.google.com/file/d/1mwnl-Lr8xNsLWmBPmCOxHPKJtcCTdjwL/view?usp=sharing)) from Google Drive , and unpack it in the root folder of the project.
+Step 2: download demo data (Link: [here](https://drive.google.com/file/d/1z8uyb2viJ1XBoRarPLtLpywa86j8PldW/view?usp=sharing)) from Google Drive or (Link: [here](http://nlpvis.thuvis.org/data.zip)) from my project page, and unpack it in the root folder of the project.
 ```
 unzip data.zip
 ```
