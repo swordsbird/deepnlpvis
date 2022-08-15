@@ -15,14 +15,13 @@ project_name = 'DeepNLPVis'
 
 class DataLoader:
     def __init__(self, home_path, dataset_name, model_name, size=-1, load_activation=True, datatype='train'):
-        self.home_path = home_path
+        self.home_path = os.path.join(home_path, 'data')
         self.dataset_name = dataset_name
         self.project_name = project_name
         self.model_name = model_name
         self.color_scheme = None
         self.xi_values = None
-        self.dataset_path = os.path.join(
-            self.home_path, self.project_name, 'dataset')
+        self.dataset_path = os.path.join(self.home_path, 'dataset')
 
         if datatype == 'train':
             self.data_path = os.path.join(
@@ -303,8 +302,8 @@ class DataLoader:
         print('max_len', max_len)
 
     def init_cache(self):
-        if not os.path.exists('cache'):
-            os.mkdir('cache')
+        if not os.path.exists('data/cache'):
+            os.mkdir('data/cache', parents=True)
         self.cache = {}
         self.cache['linechart_idxes'] = None
         self.cache['linechart_attrs'] = None

@@ -12,15 +12,13 @@ from utils import get_weight_matrix, entropy_to_contribution, stem
 
 
 def set_instance_coordinates(loader):
-    data_embed_file = os.path.join(
-        'cache', loader.dataset_name, 'data_embed.json')
+    data_embed_file = os.path.join(loader.home_path, 'cache', loader.dataset_name, 'data_embed.json')
     f = open(data_embed_file, 'r')
     s = f.read()
     data_embed = json.loads(s)
     # data embedding -- instance's x coordinate
     loader.set_instance_embedding(data_embed)
-    data_prob_file = os.path.join(
-        'cache', loader.dataset_name, 'data_prob.json')
+    data_prob_file = os.path.join(loader.home_path, 'cache', loader.dataset_name, 'data_prob.json')
     f = open(data_prob_file, 'r')
     s = f.read()
     data_prob = json.loads(s)
@@ -35,15 +33,13 @@ def set_instance_coordinates(loader):
 
 
 def set_word_coordinates(loader):
-    word_embed_file = os.path.join(
-        'cache', loader.dataset_name, 'word_embed.json')
+    word_embed_file = os.path.join(loader.home_path, 'cache', loader.dataset_name, 'word_embed.json')
     f = open(word_embed_file, 'r')
     s = f.read()
     word_embed = json.loads(s)
     # word embedding -- word's x coordinate
     loader.set_word_embedding(word_embed)
-    word_prob_file = os.path.join(
-        'cache', loader.dataset_name, 'word_prob.json')
+    word_prob_file = os.path.join(loader.home_path, 'cache', loader.dataset_name, 'word_prob.json')
     f = open(word_prob_file, 'r')
     s = f.read()
     word_prob = json.loads(s)
@@ -55,7 +51,7 @@ def set_prediction(loader):
     loader.all_new_s = []
     loader.all_old_s = []
     for idx in range(loader.size):
-        cache_dir = os.path.join('cache', loader.dataset_name)
+        cache_dir = os.path.join(loader.home_path, 'cache', loader.dataset_name)
         cache_file = os.path.join(cache_dir, f'{idx}.json')
         cache_data = open(cache_file, 'r').read()
         cache_data = json.loads(cache_data)
