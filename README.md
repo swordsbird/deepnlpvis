@@ -10,15 +10,23 @@ Online video: http://nlpvis.thuvis.org/Video/nlpvis.mp4
 Requirements
 ----------
 ```
-anytree==2.8.0
-cffi==1.14.0
-fastlapjv==1.0.0
+allennlp==2.8.0
 Flask==1.1.2
-matplotlib==3.1.3
-numpy==1.18.4
-Pillow==7.1.2
-scikit-learn==0.22.1
-scipy==1.4.1
+Flask_Compress==1.5.0
+Flask_Cors==3.0.10
+matplotlib==3.5.1
+numpy==1.21.2
+pytorch_pretrained_bert==0.6.2
+PyYAML==6.0
+scikit_learn==1.1.2
+scipy==1.8.1
+torch==1.11.0
+tqdm==4.63.1
+jinja2==3.0
+itsdangerous==2.0.1
+werkzeug==2.0.3
+nltk==3.7
+pandas==1.4.3
 ```
 Tested on Ubuntu 20.04, Python 3.8.
 
